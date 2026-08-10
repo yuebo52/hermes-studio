@@ -63,6 +63,7 @@
     "build:desktop:win": "npm run build && npm run desktop:install && npm --prefix packages/desktop run dist -- --win --publish never",
     "build:desktop:linux": "npm run build && npm run desktop:install && npm --prefix packages/desktop run dist -- --linux --publish never",
     "openapi:generate": "node scripts/generate-openapi.mjs",
+    "jwt:generate": "node scripts/generate-external-jwt.mjs \"\" admin admin 60",
     "claude": "claude --dangerously-skip-permissions",
     "test:workflow-live": "vite-node scripts/workflow-live-acceptance.ts"
   },

@@ -80,4 +80,19 @@ export const config = {
   corsOrigins: getCorsOrigins(),
   remoteRelay,
   appRelay,
+  externalJwt: {
+    enabled: process.env.EXTERNAL_JWT_ENABLED
+      ? (process.env.EXTERNAL_JWT_ENABLED === 'true' || process.env.EXTERNAL_JWT_ENABLED === '1')
+      : (process.env.NODE_ENV !== 'production' || !!(process.env.EXTERNAL_JWT_SECRET || process.env.EXTERNAL_JWT_PUBLIC_KEY || process.env.EXTERNAL_JWT_JWKS_URI)),
+    secret: process.env.EXTERNAL_JWT_SECRET || (process.env.NODE_ENV !== 'production' ? 'my-super-secret-jwt-key-2026' : ''),
+    publicKey: process.env.EXTERNAL_JWT_PUBLIC_KEY || '',
+    jwksUri: process.env.EXTERNAL_JWT_JWKS_URI || '',
+    issuer: process.env.EXTERNAL_JWT_ISSUER || '',
+    audience: process.env.EXTERNAL_JWT_AUDIENCE || '',
+    usernameClaim: process.env.EXTERNAL_JWT_USERNAME_CLAIM || 'username',
+    roleClaim: process.env.EXTERNAL_JWT_ROLE_CLAIM || 'role',
+    autoProvision: process.env.EXTERNAL_JWT_AUTO_PROVISION !== 'false' && process.env.EXTERNAL_JWT_AUTO_PROVISION !== '0',
+    defaultRole: (process.env.EXTERNAL_JWT_DEFAULT_ROLE === 'admin' || process.env.EXTERNAL_JWT_DEFAULT_ROLE === 'super_admin') ? process.env.EXTERNAL_JWT_DEFAULT_ROLE : 'user',
+  },
 }
+

@@ -34,6 +34,21 @@ export async function loginWithPassword(username: string, password: string): Pro
   return data as LoginResponse
 }
 
+export async function exchangeExternalJwtToken(externalJwt: string): Promise<LoginResponse> {
+  const res = await fetch('/api/auth/exchange-external-jwt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ external_jwt: externalJwt }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err: any = new Error(data.error || 'External JWT exchange failed')
+    err.status = res.status
+    throw err
+  }
+  return res.json() as Promise<LoginResponse>
+}
+
 export interface CurrentUser {
   id: number
   username: string

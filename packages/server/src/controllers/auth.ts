@@ -29,6 +29,7 @@ import { listProfileNamesFromDisk } from '../services/hermes/hermes-profile'
 import { startOutboundRelayClient, stopOutboundRelayClient } from '../services/global-agent/outbound-relay-client'
 import { getLanEndpointKind } from '../services/lan-discovery'
 import { getPublicSystemInfo } from '../services/system-info'
+import { processExternalJwtLogin } from '../services/external-jwt'
 import { config } from '../config'
 
 /**
@@ -220,6 +221,34 @@ export async function login(ctx: Context) {
 
   const result = await passwordLogin(ctx, username, password)
   if (!result.ok) return
+  ctx.body = {
+    token: result.token,
+    userId: result.user.id,
+    theme: toUserThemePayload(getUserTheme(result.user.id)),
+  }
+}
+
+/**
+ * POST /api/auth/exchange-external-jwt
+ * Authenticate with external JWT token (public).
+ * Returns a user-scoped internal JWT on success.
+ */
+export async function exchangeExternalJwt(ctx: Context) {
+  const { external_jwt, token } = ctx.request.body as { external_jwt?: string; token?: string }
+  const jwt = (external_jwt || token || '').trim()
+  if (!jwt) {
+    ctx.status = 400
+    ctx.body = { error: 'External JWT token is required' }
+    return
+  }
+
+  const result = await processExternalJwtLogin(jwt)
+  if ('error' in result) {
+    ctx.status = result.status
+    ctx.body = { error: result.error }
+    return
+  }
+
   ctx.body = {
     token: result.token,
     userId: result.user.id,
