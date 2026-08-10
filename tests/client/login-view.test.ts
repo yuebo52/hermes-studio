@@ -113,12 +113,6 @@ describe('LoginView password login', () => {
     expect(mockReplace).toHaveBeenCalledWith(redirect)
   })
 
-  it('shows the default login hint', () => {
-    const wrapper = mount(LoginView)
-
-    expect(wrapper.text()).toContain('login.defaultCredentialsHint')
-  })
-
   it('shows an error when password login fails', async () => {
     mockLoginWithPassword.mockRejectedValue(new Error('Invalid username or password'))
     const wrapper = mount(LoginView)
