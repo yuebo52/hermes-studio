@@ -65,9 +65,7 @@ export async function currentUser(ctx: Context) {
       updated_at: user.updated_at,
       last_login_at: user.last_login_at,
       avatar: user.avatar || '',
-      requiresCredentialChange: process.env.HERMES_DESKTOP === 'true'
-        ? false
-        : user.username === DEFAULT_USERNAME && verifyPassword(DEFAULT_PASSWORD, user.password_hash),
+      requiresCredentialChange: false,
     },
   }
 }
