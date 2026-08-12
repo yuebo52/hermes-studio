@@ -3,6 +3,7 @@ import { hasApiKey, isStoredSuperAdmin, setApiKey } from '@/api/client'
 import { exchangeExternalJwtToken } from '@/api/auth'
 import { hasDesktopBrowserBridge } from '@/utils/desktop-bridge'
 import { resolveLoginRedirect } from '@/utils/login-redirect'
+import { useTheme } from '@/composables/useTheme'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -265,6 +266,10 @@ async function handleExternalJwtAutoLogin(query: Record<string, any>): Promise<b
     const res = await exchangeExternalJwtToken(externalJwt)
     if (res?.token) {
       setApiKey(res.token)
+      if (res.userId && res.theme) {
+        const { activateUserTheme } = useTheme()
+        activateUserTheme(res.userId, res.theme)
+      }
       return true
     }
   } catch (err) {

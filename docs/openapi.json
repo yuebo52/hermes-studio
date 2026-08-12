@@ -336,6 +336,53 @@
         }
       }
     },
+    "/api/auth/exchange-external-jwt": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Create exchange-external-jwt",
+        "description": "POST /api/auth/exchange-external-jwt",
+        "operationId": "exchangeExternalJwt",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "external_jwt": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/locked-ips": {
       "get": {
         "tags": [

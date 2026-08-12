@@ -2,11 +2,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockHasApiKey = vi.hoisted(() => vi.fn())
+const mockSetApiKey = vi.hoisted(() => vi.fn())
 const mockIsStoredSuperAdmin = vi.hoisted(() => vi.fn())
+const mockExchangeExternalJwtToken = vi.hoisted(() => vi.fn())
+const mockActivateUserTheme = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({
   hasApiKey: mockHasApiKey,
+  setApiKey: mockSetApiKey,
   isStoredSuperAdmin: mockIsStoredSuperAdmin,
+}))
+
+vi.mock('@/api/auth', () => ({
+  exchangeExternalJwtToken: mockExchangeExternalJwtToken,
+}))
+
+vi.mock('@/composables/useTheme', () => ({
+  useTheme: () => ({
+    activateUserTheme: mockActivateUserTheme,
+  }),
 }))
 
 async function loadRouter() {
@@ -16,6 +30,7 @@ async function loadRouter() {
 
 describe('router login redirect', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     mockHasApiKey.mockReturnValue(false)
     mockIsStoredSuperAdmin.mockReturnValue(true)
     if (!document.queryCommandSupported) {
@@ -64,4 +79,18 @@ describe('router login redirect', () => {
 
     expect(router.currentRoute.value.name).toBe('login')
   })
+
+  it('handles external_jwt auto-login and activates user theme', async () => {
+    const theme = { fontSize: 16, textColor: null, accentColor: null, background: null, updatedAt: 123 }
+    mockExchangeExternalJwtToken.mockResolvedValue({ token: 'internal-jwt', userId: 42, theme })
+    const router = await loadRouter()
+
+    await router.push('/?external_jwt=mocked-ext-jwt')
+    await router.isReady()
+
+    expect(mockExchangeExternalJwtToken).toHaveBeenCalledWith('mocked-ext-jwt')
+    expect(mockSetApiKey).toHaveBeenCalledWith('internal-jwt')
+    expect(mockActivateUserTheme).toHaveBeenCalledWith(42, theme)
+  })
 })
+
