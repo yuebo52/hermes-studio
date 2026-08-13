@@ -207,7 +207,7 @@ export async function processExternalJwtLogin(externalJwt: string): Promise<{ to
       password: randomPassword,
       role,
       status: 'active',
-      profiles: isFirstUser || role === 'super_admin' ? [] : ['default'],
+      profiles: ['default'],
     })
 
     if (!user) {
