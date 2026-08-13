@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package*.json ./
-COPY .npmrc* ./
 
 ENV NODE_OPTIONS=--max-old-space-size=4096 \
     npm_config_loglevel=error \
