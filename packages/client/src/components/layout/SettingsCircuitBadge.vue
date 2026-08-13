@@ -246,7 +246,7 @@ function confirmDeleteDevice(device: McuDevice) {
   -->
   <NTooltip trigger="hover" placement="top">
     <template #trigger>
-      <button class="settings-circuit-link" type="button" :aria-label="t('mcuDevices.title')" @click.stop="openModal">
+      <button class="settings-circuit-link" type="button" :aria-label="t('mcuDevices.title')" @click.stop="openModal" style="display: none;">
         <svg class="settings-circuit-badge settings-circuit-badge--pcb" viewBox="0 0 36 22" fill="none" aria-hidden="true">
           <rect class="settings-pcb-board" x="3" y="3" width="30" height="16" rx="3" />
           <path class="settings-pcb-copper" d="M7 7h6v4h7v-3h9" />
