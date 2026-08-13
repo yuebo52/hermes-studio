@@ -1,6 +1,6 @@
 import { createHmac, createPublicKey, createVerify, timingSafeEqual, type KeyObject } from 'crypto'
 import { config } from '../config'
-import { createUser, findUserByUsername, touchUserLogin, type UserRecord, type UserRole } from '../db/hermes/users-store'
+import { countUsers, createUser, findUserByUsername, touchUserLogin, type UserRecord, type UserRole } from '../db/hermes/users-store'
 import { issueUserJwt } from '../middleware/user-auth'
 
 export interface ExternalJwtPayload {
@@ -189,8 +189,12 @@ export async function processExternalJwtLogin(externalJwt: string): Promise<{ to
       return { error: `User "${username}" is not registered in Hermes Studio`, status: 403 }
     }
 
-    let role: UserRole = cfg.defaultRole as UserRole
-    if (cfg.roleClaim && typeof payload[cfg.roleClaim] === 'string') {
+    const isFirstUser = countUsers() === 0
+    let role: UserRole = isFirstUser
+      ? 'super_admin'
+      : (cfg.defaultRole === 'super_admin' || cfg.defaultRole === 'admin' ? cfg.defaultRole : 'admin')
+
+    if (!isFirstUser && cfg.roleClaim && typeof payload[cfg.roleClaim] === 'string') {
       const claimRole = (payload[cfg.roleClaim] as string).toLowerCase()
       if (claimRole === 'admin' || claimRole === 'super_admin') {
         role = claimRole
@@ -203,6 +207,7 @@ export async function processExternalJwtLogin(externalJwt: string): Promise<{ to
       password: randomPassword,
       role,
       status: 'active',
+      profiles: isFirstUser || role === 'super_admin' ? [] : ['default'],
     })
 
     if (!user) {

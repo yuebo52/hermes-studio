@@ -107,18 +107,19 @@ describe('External JWT Service', () => {
       const token = createHmacJwt({ username: 'new_external_user', exp: now + 3600 }, 'test-secret-123')
 
       vi.spyOn(usersStore, 'findUserByUsername').mockReturnValue(null)
+      vi.spyOn(usersStore, 'countUsers').mockReturnValue(1)
       const mockCreatedUser: usersStore.UserRecord = {
         id: 99,
         username: 'new_external_user',
         password_hash: 'hashed',
-        role: 'user' as any,
+        role: 'admin',
         status: 'active',
         created_at: Date.now(),
         updated_at: Date.now(),
         last_login_at: null,
         avatar: '',
       }
-      vi.spyOn(usersStore, 'createUser').mockReturnValue(mockCreatedUser)
+      const createUserSpy = vi.spyOn(usersStore, 'createUser').mockReturnValue(mockCreatedUser)
       vi.spyOn(usersStore, 'touchUserLogin').mockImplementation(() => {})
 
       const result = await processExternalJwtLogin(token)
@@ -127,6 +128,39 @@ describe('External JWT Service', () => {
         expect(result.user.username).toBe('new_external_user')
         expect(result.user.id).toBe(99)
       }
+      expect(createUserSpy).toHaveBeenCalledWith(expect.objectContaining({
+        username: 'new_external_user',
+        role: 'admin',
+        profiles: ['default'],
+      }))
+    })
+
+    it('auto-provisions first user as super_admin when system has 0 users', async () => {
+      const now = Math.floor(Date.now() / 1000)
+      const token = createHmacJwt({ username: 'first_super_admin', exp: now + 3600 }, 'test-secret-123')
+
+      vi.spyOn(usersStore, 'findUserByUsername').mockReturnValue(null)
+      vi.spyOn(usersStore, 'countUsers').mockReturnValue(0)
+      const mockCreatedUser: usersStore.UserRecord = {
+        id: 1,
+        username: 'first_super_admin',
+        password_hash: 'hashed',
+        role: 'super_admin',
+        status: 'active',
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        last_login_at: null,
+        avatar: '',
+      }
+      const createUserSpy = vi.spyOn(usersStore, 'createUser').mockReturnValue(mockCreatedUser)
+      vi.spyOn(usersStore, 'touchUserLogin').mockImplementation(() => {})
+
+      const result = await processExternalJwtLogin(token)
+      expect('token' in result).toBe(true)
+      expect(createUserSpy).toHaveBeenCalledWith(expect.objectContaining({
+        username: 'first_super_admin',
+        role: 'super_admin',
+      }))
     })
 
     it('rejects login if autoProvision is false and user does not exist', async () => {
