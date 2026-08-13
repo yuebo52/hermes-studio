@@ -7,6 +7,7 @@ export const authPublicRoutes = new Router()
 authPublicRoutes.get('/api/auth/status', ctrl.authStatus)
 authPublicRoutes.post('/api/auth/login', ctrl.login)
 authPublicRoutes.post('/api/auth/exchange-external-jwt', ctrl.exchangeExternalJwt)
+authPublicRoutes.post('/api/auth/app-login', ctrl.appLogin)
 authPublicRoutes.post('/api/auth/mcu-login', ctrl.microcontrollerLogin)
 
 // Protected routes (auth required)
