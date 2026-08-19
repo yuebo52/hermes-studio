@@ -15,8 +15,10 @@ const props = withDefaults(defineProps<{
     members?: MemberInfo[]
     currentUserId?: string
     allowSpeech?: boolean
+    active?: boolean
 }>(), {
     allowSpeech: true,
+    active: false,
 })
 
 const emit = defineEmits<{
@@ -27,13 +29,11 @@ const { t } = useI18n()
 const items = computed(() =>
     props.message.runItems?.length ? props.message.runItems : [props.message]
 )
-const currentRunToolItems = computed(() =>
-    props.message.isStreaming
-        ? items.value.filter(item => item.role === 'tool')
-        : []
+const runToolItems = computed(() =>
+    items.value.filter(item => item.role === 'tool').reverse()
 )
 const transcriptItems = computed(() =>
-    currentRunToolItems.value.length > 0
+    runToolItems.value.length > 0
         ? items.value.filter(item => item.role !== 'tool')
         : items.value
 )
@@ -79,7 +79,11 @@ function handleToolListWheel(event: WheelEvent): void {
 
 <template>
     <div class="group-agent-run" :data-run-id="message.run_id || undefined">
-        <div class="run-avatar">
+        <div
+            class="run-avatar"
+            :class="{ 'run-avatar-active': active }"
+            :aria-busy="active"
+        >
             <GroupAgentMessageAvatar
                 v-if="agentInfo"
                 :agent="agentInfo"
@@ -102,7 +106,7 @@ function handleToolListWheel(event: WheelEvent): void {
             </div>
             <div class="run-card" :class="{ streaming: message.isStreaming }">
                 <div
-                    v-if="currentRunToolItems.length"
+                    v-if="runToolItems.length"
                     class="run-tool-list"
                     tabindex="0"
                     role="region"
@@ -112,7 +116,7 @@ function handleToolListWheel(event: WheelEvent): void {
                     @wheel="handleToolListWheel"
                 >
                     <div
-                        v-for="item in currentRunToolItems"
+                        v-for="item in runToolItems"
                         :key="item.id"
                         class="run-tool-item"
                         :data-message-id="item.id"
@@ -172,6 +176,31 @@ function handleToolListWheel(event: WheelEvent): void {
     border-radius: 8px;
 }
 
+.run-avatar-active {
+    animation: run-avatar-active-glow 4s linear infinite;
+}
+
+@keyframes run-avatar-active-glow {
+    0% {
+        box-shadow: 0 0 0 2px rgba(70, 190, 255, 0.8), 0 0 10px rgba(70, 190, 255, 0.35);
+    }
+
+    50% {
+        box-shadow: 0 0 0 2px rgba(185, 100, 255, 0.85), 0 0 12px rgba(185, 100, 255, 0.4);
+    }
+
+    100% {
+        box-shadow: 0 0 0 2px rgba(70, 190, 255, 0.8), 0 0 10px rgba(70, 190, 255, 0.35);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .run-avatar-active {
+        animation: none;
+        box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.75);
+    }
+}
+
 .run-column {
     display: flex;
     flex-direction: column;
@@ -220,7 +249,7 @@ function handleToolListWheel(event: WheelEvent): void {
     flex-direction: column;
     width: 100%;
     min-width: 0;
-    max-height: 180px;
+    max-height: 360px;
     overflow-y: auto;
     scrollbar-width: thin;
 
