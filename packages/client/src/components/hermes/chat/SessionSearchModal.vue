@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NInput, NModal, NSpin, useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { fetchSessions, searchSessions, type SessionSearchResult, type SessionSummary } from '@/api/hermes/sessions'
+import { fetchSessions, searchSessions, type SessionSearchResult, type SessionSummary } from '@/api/studio/sessions'
 import { useChatStore } from '@/stores/hermes/chat'
 import { useSessionSearch } from '@/composables/useSessionSearch'
 import type { Session } from '@/stores/hermes/chat'
@@ -301,10 +301,10 @@ onUnmounted(() => {
             >
               <div class="result-main">
                 <div class="result-title-row">
-                  <span class="result-title">{{ getItemTitle(item) }}</span>
+                  <span class="result-title" dir="auto">{{ getItemTitle(item) }}</span>
                   <span class="result-source">{{ formatSource(item.source) }}</span>
                 </div>
-                <div class="result-snippet">
+                <div class="result-snippet" dir="auto">
                   {{ hasQuery ? item.snippet || t('chat.searchNoSnippet') : item.preview || t('chat.searchRecent') }}
                 </div>
               </div>

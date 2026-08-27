@@ -25,7 +25,7 @@ import {
   updateLocalGroupAgent,
   type LocalGroupAgentConnection,
   type RemoteGroupAgentDescriptor,
-} from '@/api/hermes/group-chat-agent-link'
+} from '@/api/studio/group-chat-agent-link'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -246,6 +246,7 @@ function syncAgentModelSelection(profile: string): void {
   const defaults = getDefaultAgentModel(profile)
   selectedAgentProvider.value = defaults.provider
   selectedAgentModel.value = defaults.model
+  selectedAgentReasoningEffort.value = ''
   syncAgentApiMode()
 }
 
@@ -262,7 +263,13 @@ function handleAgentProfileChange(profile: string): void {
 function handleAgentProviderChange(provider: string): void {
   selectedAgentProvider.value = provider
   selectedAgentModel.value = agentModelOptions.value[0]?.value || ''
+  selectedAgentReasoningEffort.value = ''
   syncAgentApiMode()
+}
+
+function handleAgentModelChange(model: string): void {
+  selectedAgentModel.value = model
+  selectedAgentReasoningEffort.value = ''
 }
 
 function applyAgentConfiguration(agent: RemoteGroupAgentDescriptor): void {
@@ -639,11 +646,12 @@ onUnmounted(() => {
           <div class="field">
             <label>{{ t('models.models') }}</label>
             <NSelect
-              v-model:value="selectedAgentModel"
+              :value="selectedAgentModel"
               :options="agentModelOptions"
               :placeholder="t('models.selectModel')"
               :disabled="waitingForApproval || !selectedAgentProvider"
               filterable
+              @update:value="handleAgentModelChange"
             />
           </div>
           <div v-if="selectedAgentType !== 'hermes'" class="field">

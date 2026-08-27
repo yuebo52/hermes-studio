@@ -3,19 +3,19 @@ import { createCipheriv, randomBytes } from 'crypto'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { claudeProxyMessages, claudeProxyModels, registerClaudeCodeProxyTarget } from '../../packages/server/src/services/coding-agents/claude-code/proxy'
-import { codexProxyModels, codexProxyResponses, registerCodexProxyTarget } from '../../packages/server/src/services/coding-agents/codex/proxy'
+import { claudeProxyMessages, claudeProxyModels, registerClaudeCodeProxyTarget } from '../../packages/server/src/modules/coding-agents/services/claude-code/proxy'
+import { codexProxyModels, codexProxyResponses, registerCodexProxyTarget } from '../../packages/server/src/modules/coding-agents/services/codex/proxy'
 import {
   codexToolSearchConfig,
   migratePersistedPiRuntimeMcpConfigs,
   prepareCodingAgentLaunch,
   restorePersistedPiProxyTargets,
-} from '../../packages/server/src/services/coding-agents'
-import { getModelContextLength } from '../../packages/server/src/services/hermes/model-context'
+} from '../../packages/server/src/bootstrap/coding-agents'
+import { getModelContextLength } from '../../packages/server/src/modules/hermes/services/models/context'
 import {
   normalizePiThinkingLevel,
   piModelSupportsThinking,
-} from '../../packages/server/src/services/coding-agents/pi/thinking'
+} from '../../packages/server/src/modules/coding-agents/services/pi/thinking'
 
 const homes: string[] = []
 
@@ -1366,13 +1366,77 @@ describe('coding agent launch preparation', () => {
     expect(requestBody).toMatchObject({
       model: 'deepseek-v4-pro',
       max_tokens: 16,
+      // The in-input `developer` message converts to `system` and is relocated
+      // to the front (vLLM et al. reject a system message mid-conversation).
       messages: [
-        { role: 'user', content: 'hello' },
         { role: 'system', content: 'be terse' },
+        { role: 'user', content: 'hello' },
       ],
     })
     expect(ctx.body.output[0].content[0].text).toBe('ok')
     expect(ctx.body.usage).toMatchObject({ input_tokens: 3, output_tokens: 1, total_tokens: 4 })
+  })
+
+  it('replays DeepSeek reasoning_content when Codex continues after a tool call', async () => {
+    const target = registerCodexProxyTarget({
+      profile: 'default',
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'sk-upstream',
+      apiMode: 'chat_completions',
+      agentSessionId: 'codex-deepseek-tool-replay',
+    })
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: 'chatcmpl_after_tool',
+      choices: [{
+        finish_reason: 'stop',
+        message: { role: 'assistant', content: 'The README is present.' },
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ctx = makeProxyContext(target.routeKey, target.token, {
+      input: [
+        { role: 'user', content: [{ type: 'input_text', text: 'inspect the repo' }] },
+        {
+          type: 'reasoning',
+          id: 'rs_before_read',
+          summary: [{ type: 'summary_text', text: 'I should read the README first.' }],
+        },
+        {
+          type: 'function_call',
+          call_id: 'call_read',
+          name: 'read_file',
+          arguments: '{"path":"README.md"}',
+        },
+        {
+          type: 'function_call_output',
+          call_id: 'call_read',
+          output: 'README contents',
+        },
+      ],
+    })
+
+    await codexProxyResponses(ctx)
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(requestBody.messages).toEqual([
+      { role: 'user', content: 'inspect the repo' },
+      {
+        role: 'assistant',
+        content: null,
+        reasoning_content: 'I should read the README first.',
+        tool_calls: [{
+          id: 'call_read',
+          type: 'function',
+          function: { name: 'read_file', arguments: '{"path":"README.md"}' },
+        }],
+      },
+      { role: 'tool', tool_call_id: 'call_read', content: 'README contents' },
+    ])
+    expect(ctx.status).toBeUndefined()
+    expect(ctx.body.output[0].content[0].text).toBe('The README is present.')
   })
 
   it('adapts Codex Responses requests to Anthropic Messages', async () => {
