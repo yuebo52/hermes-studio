@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHmac } from 'crypto'
-import { config } from '../../packages/server/src/config'
+import { config } from '../../packages/server/src/modules/studio/public/config'
 import {
   extractExternalUsername,
   processExternalJwtLogin,
   verifyExternalJwtToken,
   type ExternalJwtPayload,
-} from '../../packages/server/src/services/external-jwt'
-import * as usersStore from '../../packages/server/src/db/hermes/users-store'
+} from '../../packages/server/src/modules/studio/public/auth'
+import * as usersStore from '../../packages/server/src/modules/studio/public/users'
 
 function createHmacJwt(payload: Record<string, unknown>, secret: string, alg = 'HS256'): string {
   const header = { alg, typ: 'JWT' }

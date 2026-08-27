@@ -3,7 +3,7 @@ import { computed, h, ref } from 'vue'
 import { NButton, NDataTable, NForm, NFormItem, NInput, NModal, NSpace, NTag, NTooltip, useDialog, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { connectMcuDeviceRemote, createMcuDevice, deleteMcuDevice, disconnectMcuDeviceRemote, fetchMcuDevices, updateMcuDeviceName, type McuDevice } from '@/api/hermes/mcu-devices'
+import { connectMcuDeviceRemote, createMcuDevice, deleteMcuDevice, disconnectMcuDeviceRemote, fetchMcuDevices, updateMcuDeviceName, type McuDevice } from '@/api/studio/mcu-devices'
 
 const { t } = useI18n()
 const message = useMessage()

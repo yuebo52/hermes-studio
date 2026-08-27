@@ -23,7 +23,7 @@ import {
   type UserStatus,
 } from '../public/users'
 import { getUserTheme, removeAllUserThemeAssets, toUserThemePayload } from '../services/theme/user-theme'
-import { getUserJwtExpiresSeconds, issueAppJwt, issueUserJwt } from '../public/auth'
+import { getUserJwtExpiresSeconds, issueAppJwt, issueUserJwt, processExternalJwtLogin } from '../public/auth'
 import { consumeAppAuthorizationCode, upsertAppConnection, type AppConnectionType } from '../services/app-relay/app-connections'
 import { listProfileNamesFromDisk } from '../public/profile-config'
 import { startOutboundRelayClient, stopOutboundRelayClient } from '../public/global-agent'

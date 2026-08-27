@@ -144,7 +144,7 @@ export function ensureFeishuRuntime(userId: number, credentials: StoredFeishuCre
       runtime.status = 'running'
       runtime.lastError = undefined
     },
-    onError: error => {
+    onError: (error: Error) => {
       if (runtimes.get(userId) !== runtime) return
       runtime.status = 'error'
       runtime.lastError = error.message
@@ -153,7 +153,7 @@ export function ensureFeishuRuntime(userId: number, credentials: StoredFeishuCre
   })
   runtime = { key, client, status: 'running' }
   runtimes.set(userId, runtime)
-  void client.start({ eventDispatcher: dispatcher }).catch(error => {
+  void client.start({ eventDispatcher: dispatcher }).catch((error: unknown) => {
     if (runtimes.get(userId) !== runtime) return
     runtime.status = 'error'
     runtime.lastError = error instanceof Error ? error.message : String(error)

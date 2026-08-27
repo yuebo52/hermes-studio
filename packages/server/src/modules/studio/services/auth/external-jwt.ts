@@ -1,7 +1,7 @@
 import { createHmac, createPublicKey, createVerify, timingSafeEqual, type KeyObject } from 'crypto'
-import { config } from '../config'
-import { countUsers, createUser, findUserByUsername, touchUserLogin, type UserRecord, type UserRole } from '../db/hermes/users-store'
-import { issueUserJwt } from '../middleware/user-auth'
+import { config } from '../../public/config'
+import { countUsers, createUser, findUserByUsername, touchUserLogin, type UserRecord, type UserRole } from '../../public/users'
+import { issueUserJwt } from '../../public/auth'
 
 export interface ExternalJwtPayload {
   [key: string]: unknown

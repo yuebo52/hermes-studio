@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { hasApiKey, isStoredSuperAdmin, setApiKey } from '@/api/client'
-import { exchangeExternalJwtToken } from '@/api/auth'
+import { exchangeExternalJwtToken } from '@/api/studio/auth'
 import { hasDesktopBrowserBridge } from '@/utils/desktop-bridge'
 import { resolveLoginRedirect } from '@/utils/login-redirect'
 import { useTheme } from '@/composables/useTheme'
