@@ -22,6 +22,7 @@ WORKDIR /app
 COPY package*.json ./
 
 ENV NODE_OPTIONS=--max-old-space-size=4096 \
+    npm_config_registry=https://registry.npmmirror.com \
     npm_config_loglevel=error \
     npm_config_fund=false \
     npm_config_audit=false \
@@ -57,7 +58,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean
 
 # 全局安装 Claude Code 与 Codex CLI 并清理 npm 缓存
-RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code @openai/codex \
+RUN npm install -g --registry=https://registry.npmmirror.com --no-audit --no-fund @anthropic-ai/claude-code @openai/codex \
     && claude --version \
     && codex --version \
     && npm cache clean --force
