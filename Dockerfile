@@ -57,10 +57,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 全局安装 Claude Code 与 Codex CLI 并清理 npm 缓存
+# 全局安装 Claude Code、Codex CLI 与 Lark CLI 并清理 npm 缓存
 RUN npm install -g --registry=https://registry.npmmirror.com --no-audit --no-fund @anthropic-ai/claude-code @openai/codex \
+    && npx -y --registry=https://registry.npmmirror.com @larksuite/cli@latest install \
     && claude --version \
     && codex --version \
+    && lark-cli --version \
     && npm cache clean --force
 
 WORKDIR /app

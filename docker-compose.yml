@@ -24,6 +24,11 @@ services:
       - HERMES_APP_ENTITLEMENT_PUBLIC_KEY=${HERMES_APP_ENTITLEMENT_PUBLIC_KEY:-}
       - PATH=/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       - HERMES_ALLOW_ROOT_GATEWAY=1
+      - EXTERNAL_JWT_ENABLED=${EXTERNAL_JWT_ENABLED:-true}
+      - EXTERNAL_JWT_SECRET=${EXTERNAL_JWT_SECRET:-secret}
+      - EXTERNAL_JWT_USERNAME_CLAIM=${EXTERNAL_JWT_USERNAME_CLAIM:-username}
+      - EXTERNAL_JWT_ROLE_CLAIM=${EXTERNAL_JWT_ROLE_CLAIM:-role}
+      - EXTERNAL_JWT_DEFAULT_ROLE=super_admin
     restart: unless-stopped
     stdin_open: true
     tty: true
