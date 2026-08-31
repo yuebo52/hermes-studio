@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto'
 import { mkdir, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import {
+  createChatEkkoAuthorizedProviderFetch as createAuthorizedProviderFetch,
   createChatEkkoModelClient as createModelClient,
   createPrimaryAgentBridge,
   getChatEkkoAgent as getGlobalEkkoAgent,
@@ -593,7 +594,14 @@ async function callEkkoSummarizer(
     apiMode: runtimeConfig.apiMode,
     timeoutMs,
   })
-  const providerClient = createModelClient(providerConfig)
+  const providerClient = createModelClient(providerConfig, {
+    fetch: createAuthorizedProviderFetch({
+      profile: options.profile,
+      provider,
+      model,
+      accessToken: runtimeConfig.apiKey,
+    }),
+  })
   const agent = getGlobalEkkoAgent(options.profile)
 
   await writeSummarizerDebugDump({
@@ -615,6 +623,9 @@ async function callEkkoSummarizer(
       toolsEnabled: false,
       skillsEnabled: false,
       systemPrompt: EKKO_SUMMARIZER_SYSTEM_PROMPT,
+      // Keep installation-wide prompt instructions out of the summarizer while
+      // still allowing harmless model-generation defaults to be inherited.
+      runtimeInstructions: [],
       maxSteps: 1,
       maxModelRetries: 0,
       modelDefaults: {

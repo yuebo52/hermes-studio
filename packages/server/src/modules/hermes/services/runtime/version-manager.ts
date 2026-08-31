@@ -1,11 +1,14 @@
 import { createHash } from 'crypto'
-import { accessSync, constants, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
+import { accessSync, constants, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, type Dirent } from 'fs'
 import { get as httpGet } from 'http'
 import { get as httpsGet } from 'https'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path'
 import * as tar from 'tar'
 import { config } from '../../../studio/public/config'
 import { getHermesAgentVersion, getHermesWebUiVersion } from '../../../studio/public/system-info'
+import { updateAgentStatus } from '../../../studio/public/agent-status-registry'
+import { discoverHermesCliInstallations, type HermesCliInstallation } from './discovery'
+import { cleanupRuntimePath, removeRuntimePath, renameRuntimePath } from './runtime-filesystem'
 
 const ACTIVE_VERSION_FILE = 'active-version.json'
 const DEFAULT_REMOTE_MANIFEST_URL = 'https://api.hermes-studio.ai/api/studio/versions'
@@ -85,6 +88,7 @@ export interface RuntimeVersionStatus {
     pendingStorageDirectory: string
     migrationError: string
     activationError: string
+    cliInstallations: HermesCliInstallation[]
     installed: InstalledRuntimeVersion[]
     remoteVersions: string[]
   }
@@ -95,6 +99,11 @@ export interface RuntimeVersionStatus {
     installed: InstalledWebUiVersion[]
     remoteVersions: string[]
   }
+}
+
+export interface RuntimeVersionStatusOptions {
+  probeRuntime?: boolean
+  includeRemote?: boolean
 }
 
 interface RuntimePackageManifest {
@@ -124,6 +133,13 @@ interface DownloadProgress {
 }
 
 type DownloadProgressHandler = (progress: DownloadProgress) => void
+type RuntimeInstallCompletedHandler = (runtime: InstalledRuntimeVersion) => void | Promise<void>
+
+let runtimeInstallCompletedHandler: RuntimeInstallCompletedHandler | null = null
+
+export function configureRuntimeInstallCompletedHandler(handler: RuntimeInstallCompletedHandler | null): void {
+  runtimeInstallCompletedHandler = handler
+}
 
 function runtimePlatformKey(platformName = process.platform, archName = process.arch): string {
   const osLabel = platformName === 'win32' ? 'win' : platformName === 'darwin' ? 'mac' : platformName
@@ -269,11 +285,11 @@ function scanInstalledRuntimeVersions(active = readActiveVersionManifest()): Ins
   const installed: InstalledRuntimeVersion[] = []
 
   if (existsSync(root)) {
-    for (const versionEntry of readdirSync(root, { withFileTypes: true })) {
+    for (const versionEntry of safeReadDirectoryEntries(root)) {
       if (!versionEntry.isDirectory()) continue
       const version = versionEntry.name
       const platformRoot = join(root, version)
-      for (const platformEntry of readdirSync(platformRoot, { withFileTypes: true })) {
+      for (const platformEntry of safeReadDirectoryEntries(platformRoot)) {
         if (!platformEntry.isDirectory()) continue
         const directory = join(platformRoot, platformEntry.name)
         installed.push({
@@ -328,7 +344,7 @@ export function listInstalledWebUiVersions(active = readActiveVersionManifest())
   const activeDir = activeWebUiDirectory(active)
   const installed: InstalledWebUiVersion[] = []
 
-  for (const versionEntry of readdirSync(root, { withFileTypes: true })) {
+  for (const versionEntry of safeReadDirectoryEntries(root)) {
     if (!versionEntry.isDirectory()) continue
     const directory = join(root, versionEntry.name)
     if (!existsSync(join(directory, 'package.json'))) continue
@@ -344,6 +360,14 @@ export function listInstalledWebUiVersions(active = readActiveVersionManifest())
   }
 
   return installed.sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))
+}
+
+function safeReadDirectoryEntries(directory: string): Dirent[] {
+  try {
+    return readdirSync(directory, { withFileTypes: true })
+  } catch {
+    return []
+  }
 }
 
 function isStudioVersionManifest(value: unknown): value is StudioVersionManifest {
@@ -379,40 +403,83 @@ async function fetchRemoteVersions(): Promise<{ manifest: StudioVersionManifest 
   }
 }
 
-export async function getRuntimeVersionStatus(): Promise<RuntimeVersionStatus> {
-  const active = readActiveVersionManifest()
-  const [{ manifest, error }, agentVersion] = await Promise.all([
-    fetchRemoteVersions(),
-    getHermesAgentVersion(),
+async function probeHermesAgentVersion(): Promise<string> {
+  try {
+    return await getHermesAgentVersion()
+  } catch {
+    // A missing Hermes executable is a normal inventory result. Discovery
+    // below determines whether another user CLI or managed Runtime exists.
+    return ''
+  }
+}
+
+export async function getRuntimeVersionStatus(
+  options: RuntimeVersionStatusOptions = {},
+): Promise<RuntimeVersionStatus> {
+  const probeRuntime = options.probeRuntime !== false
+  const includeRemote = probeRuntime && options.includeRemote !== false
+  const active = probeRuntime ? readActiveVersionManifest() : null
+  const installedRuntimes = probeRuntime ? listInstalledRuntimeVersions(active) : []
+  const [{ manifest, error }, agentVersion, cliInstallations] = await Promise.all([
+    includeRemote ? fetchRemoteVersions() : Promise.resolve({ manifest: null, error: '' }),
+    probeHermesAgentVersion(),
+    discoverHermesCliInstallations(installedRuntimes),
   ])
   const webUiVersion = getHermesWebUiVersion()
 
-  return {
+  const status: RuntimeVersionStatus = {
     active,
     platform: runtimePlatformKey(),
-    activeVersionPath: activeVersionPath(),
-    remoteManifestUrl: process.env.HERMES_WEB_UI_VERSION_MANIFEST_URL?.trim() || DEFAULT_REMOTE_MANIFEST_URL,
+    activeVersionPath: probeRuntime ? activeVersionPath() : '',
+    remoteManifestUrl: probeRuntime
+      ? process.env.HERMES_WEB_UI_VERSION_MANIFEST_URL?.trim() || DEFAULT_REMOTE_MANIFEST_URL
+      : '',
     remoteError: error,
     hermes: {
-      activeVersion: active?.hermesRuntimeVersion || '',
+      activeVersion: probeRuntime ? active?.hermesRuntimeVersion || '' : '',
       agentVersion,
-      activeDirectory: active?.runtimeDirectory || '',
-      storageDirectory: runtimeStorageRoot(active),
-      defaultStorageDirectory: defaultDesktopRuntimeRoot(),
-      pendingStorageDirectory: active?.pendingRuntimeRootDirectory || '',
-      migrationError: active?.runtimeMigrationError || '',
-      activationError: active?.runtimeActivationError || '',
-      installed: listInstalledRuntimeVersions(active),
+      activeDirectory: probeRuntime ? active?.runtimeDirectory || '' : '',
+      storageDirectory: probeRuntime ? runtimeStorageRoot(active) : '',
+      defaultStorageDirectory: probeRuntime ? defaultDesktopRuntimeRoot() : '',
+      pendingStorageDirectory: probeRuntime ? active?.pendingRuntimeRootDirectory || '' : '',
+      migrationError: probeRuntime ? active?.runtimeMigrationError || '' : '',
+      activationError: probeRuntime ? active?.runtimeActivationError || '' : '',
+      cliInstallations,
+      installed: installedRuntimes,
       remoteVersions: normalizeStringList(manifest?.hermes),
     },
     webui: {
       currentVersion: webUiVersion,
-      activeVersion: active?.webUiVersion || webUiVersion,
-      activeDirectory: activeWebUiDirectory(active),
-      installed: listInstalledWebUiVersions(active),
+      activeVersion: probeRuntime ? active?.webUiVersion || webUiVersion : webUiVersion,
+      activeDirectory: probeRuntime ? activeWebUiDirectory(active) : '',
+      installed: probeRuntime ? listInstalledWebUiVersions(active) : [],
       remoteVersions: [],
     },
   }
+  recordHermesAgentStatus(status)
+  return status
+}
+
+function recordHermesAgentStatus(status: RuntimeVersionStatus): void {
+  const selected = status.hermes.cliInstallations.find(item => item.selected)
+    || status.hermes.cliInstallations[0]
+  const activeRuntime = status.hermes.installed.find(item => item.active)
+  const installed = Boolean(status.hermes.agentVersion || selected?.path || activeRuntime)
+  updateAgentStatus('hermes', {
+    name: 'Hermes',
+    provider: 'Nous Research',
+    kind: 'hermes',
+    installed,
+    version: status.hermes.agentVersion
+      || selected?.version
+      || activeRuntime?.manifestHermesRuntimeVersion
+      || activeRuntime?.version
+      || '',
+    source: installed ? selected?.source || (activeRuntime ? 'managed-runtime' : 'user-cli') : 'not-installed',
+    path: selected?.path || '',
+    error: '',
+    installations: status.hermes.cliInstallations,
+  })
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -504,7 +571,7 @@ export async function downloadRuntimeVersion(version: string, source: VersionDow
   const tempRoot = join(storageRoot, `.runtime-download-${process.pid}-${Date.now()}`)
 
   mkdirSync(storageRoot, { recursive: true })
-  rmSync(tempRoot, { recursive: true, force: true })
+  removeRuntimePath(tempRoot)
   mkdirSync(tempRoot, { recursive: true })
 
   try {
@@ -518,12 +585,12 @@ export async function downloadRuntimeVersion(version: string, source: VersionDow
     await extractTarGzip(archive, tempRoot)
     validateRuntimeDirectory(tempRoot, platform)
     onProgress?.({ stage: 'install', message: 'runtimeVersions.jobStage.installRuntime' })
-    rmSync(targetRoot, { recursive: true, force: true })
+    removeRuntimePath(targetRoot)
     mkdirSync(dirname(targetRoot), { recursive: true })
-    renameSync(tempRoot, targetRoot)
+    await renameRuntimePath(tempRoot, targetRoot)
   } finally {
-    rmSync(archive, { force: true })
-    rmSync(tempRoot, { recursive: true, force: true })
+    cleanupRuntimePath(archive)
+    cleanupRuntimePath(tempRoot)
   }
 
   return {
@@ -552,7 +619,7 @@ export async function downloadWebUiVersion(version: string, source: VersionDownl
   const assetUrl = downloadAssetUrl(assetName, releaseTag, source)
 
   mkdirSync(storageRoot, { recursive: true })
-  rmSync(tempRoot, { recursive: true, force: true })
+  removeRuntimePath(tempRoot)
   mkdirSync(tempRoot, { recursive: true })
 
   try {
@@ -569,12 +636,12 @@ export async function downloadWebUiVersion(version: string, source: VersionDownl
       if (!existsSync(join(extractedRoot, required))) throw new Error(`Web UI archive is missing required file: ${required}`)
     }
     onProgress?.({ stage: 'install', message: 'runtimeVersions.jobStage.installWebUi' })
-    rmSync(targetRoot, { recursive: true, force: true })
+    removeRuntimePath(targetRoot)
     mkdirSync(dirname(targetRoot), { recursive: true })
-    renameSync(extractedRoot, targetRoot)
+    await renameRuntimePath(extractedRoot, targetRoot)
   } finally {
-    rmSync(archive, { force: true })
-    rmSync(tempRoot, { recursive: true, force: true })
+    cleanupRuntimePath(archive)
+    cleanupRuntimePath(tempRoot)
   }
 
   return { version: cleanVersion, directory: targetRoot, active: false }
@@ -664,11 +731,11 @@ export function deleteInstalledRuntimeVersion(version: string): InstalledRuntime
   if (!target) throw new Error(`Installed runtime version not found for this platform: ${cleanVersion}`)
   if (target.active) throw new Error('Active runtime version cannot be deleted')
 
-  rmSync(target.directory, { recursive: true, force: true })
+  removeRuntimePath(target.directory)
   try {
     const versionRoot = dirname(target.directory)
     if (existsSync(versionRoot) && readdirSync(versionRoot).length === 0) {
-      rmSync(versionRoot, { recursive: true, force: true })
+      removeRuntimePath(versionRoot)
     }
   } catch {
     /* ignore empty parent cleanup failures */
@@ -717,7 +784,7 @@ export function deleteDownloadedWebUiVersion(version: string): InstalledWebUiVer
     throw new Error('Only downloaded Web UI versions can be deleted')
   }
 
-  rmSync(targetDir, { recursive: true, force: true })
+  removeRuntimePath(targetDir)
   return target
 }
 
@@ -775,13 +842,21 @@ function createDownloadJob(
     })
 
     runner(cleanVersion, updateProgress)
-      .then(result => {
+      .then(async result => {
+        if (kind === 'runtime') {
+          activateInstalledRuntimeVersion(result.version)
+          result = { ...result, active: true }
+          await getRuntimeVersionStatus({ includeRemote: false })
+        }
         job.status = 'completed'
         job.stage = 'completed'
         job.message = 'runtimeVersions.jobStage.completed'
         job.percent = 100
         job.result = result
         job.updatedAt = new Date().toISOString()
+        if (kind === 'runtime' && runtimeInstallCompletedHandler) {
+          void Promise.resolve(runtimeInstallCompletedHandler(result as InstalledRuntimeVersion)).catch(() => undefined)
+        }
       })
       .catch(err => {
         job.status = 'failed'

@@ -68,6 +68,10 @@ const tagMappings = {
   'modules/hermes/routes/runtime-versions.ts': { name: 'Runtime Versions', description: 'Runtime and Web UI version management' },
   'modules/hermes/routes/write-gate.ts': { name: 'Write Gate', description: 'Hermes Agent write approval review' },
   'modules/hermes/routes/journey.ts': { name: 'Journey', description: 'Hermes Agent learning journey graph' },
+  'modules/ekko/routes/memory.ts': { name: 'Ekko Memory', description: 'Ekko durable memory management' },
+  'modules/ekko/routes/skills.ts': { name: 'Ekko Skills', description: 'Ekko reusable skill management' },
+  'modules/ekko/routes/mcp.ts': { name: 'Ekko MCP', description: 'Ekko MCP server management' },
+  'modules/ekko/routes/config.ts': { name: 'Ekko Config', description: 'Ekko runtime configuration management' },
   'modules/studio/routes/workflows.ts': { name: 'Workflows', description: 'Cross-agent workflow orchestration' },
   'modules/studio/routes/sessions.ts': { name: 'Sessions', description: 'Cross-agent chat session management' },
   'modules/studio/routes/logs.ts': { name: 'Logs', description: 'Cross-agent log file access' },
@@ -92,6 +96,7 @@ const tagMappings = {
   'modules/studio/routes/mcu-firmware.ts': { name: 'MCU Firmware', description: 'Microcontroller firmware distribution' },
   'modules/studio/routes/theme.ts': { name: 'Theme', description: 'Per-user appearance settings and background image' },
   'modules/studio/routes/api-docs.ts': { name: 'API Docs', description: 'OpenAPI route catalog' },
+  'modules/studio/routes/agent-status.ts': { name: 'Agent Status', description: 'In-memory Agent installation, version, and source status' },
   'modules/coding-agents/routes/agents.ts': { name: 'Coding Agents', description: 'Coding agent installation, config, and runs' },
 }
 
