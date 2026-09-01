@@ -8,6 +8,7 @@ import { config } from '../../../studio/public/config'
 import { getHermesAgentVersion, getHermesWebUiVersion } from '../../../studio/public/system-info'
 import { updateAgentStatus } from '../../../studio/public/agent-status-registry'
 import { discoverHermesCliInstallations, type HermesCliInstallation } from './discovery'
+import { detectHermesHome } from './path'
 import { cleanupRuntimePath, removeRuntimePath, renameRuntimePath } from './runtime-filesystem'
 
 const ACTIVE_VERSION_FILE = 'active-version.json'
@@ -26,9 +27,18 @@ export interface ActiveVersionManifest {
   pendingRuntimeRootDirectory?: string
   runtimeMigrationError?: string
   runtimeActivationError?: string
+  runtimeValidationFailures?: RuntimeValidationFailure[]
   webUiDirectory?: string
   platform?: string
   updatedAt?: string
+}
+
+export interface RuntimeValidationFailure {
+  version: string
+  platform: string
+  directory: string
+  reason: string
+  failedAt: string
 }
 
 export interface InstalledRuntimeVersion {
@@ -37,6 +47,7 @@ export interface InstalledRuntimeVersion {
   directory: string
   active: boolean
   manifestHermesRuntimeVersion?: string
+  validationError?: string
 }
 
 export interface InstalledWebUiVersion {
@@ -83,6 +94,10 @@ export interface RuntimeVersionStatus {
     activeVersion: string
     agentVersion: string
     activeDirectory: string
+    pythonPath: string
+    agentRoot: string
+    source: 'user-cli' | 'managed-runtime' | 'none'
+    dataDirectory: string
     storageDirectory: string
     defaultStorageDirectory: string
     pendingStorageDirectory: string
@@ -133,13 +148,6 @@ interface DownloadProgress {
 }
 
 type DownloadProgressHandler = (progress: DownloadProgress) => void
-type RuntimeInstallCompletedHandler = (runtime: InstalledRuntimeVersion) => void | Promise<void>
-
-let runtimeInstallCompletedHandler: RuntimeInstallCompletedHandler | null = null
-
-export function configureRuntimeInstallCompletedHandler(handler: RuntimeInstallCompletedHandler | null): void {
-  runtimeInstallCompletedHandler = handler
-}
 
 function runtimePlatformKey(platformName = process.platform, archName = process.arch): string {
   const osLabel = platformName === 'win32' ? 'win' : platformName === 'darwin' ? 'mac' : platformName
@@ -198,6 +206,52 @@ export function readActiveVersionManifest(): ActiveVersionManifest | null {
   return readJsonFile<ActiveVersionManifest>(activeVersionPath())
 }
 
+export function recordRuntimeSelectionResult(
+  failures: Array<{ directory: string; reason: string; version?: string; platform?: string }>,
+  selected?: InstalledRuntimeVersion,
+): void {
+  if (failures.length === 0) return
+  const active = readActiveVersionManifest() || { schema: 1 }
+  const detail = failures
+    .map(failure => `Runtime "${failure.directory}" failed: ${failure.reason}`)
+    .join(' ')
+  const failedAt = new Date().toISOString()
+  const failedDirectories = new Set(failures.map(failure => resolve(failure.directory)))
+  const selectedDirectory = selected ? resolve(selected.directory) : ''
+  const previousFailures = active.runtimeValidationFailures || []
+  const runtimeValidationFailures: RuntimeValidationFailure[] = [
+    ...previousFailures.filter(failure => {
+      const directory = resolve(failure.directory)
+      return directory !== selectedDirectory && !failedDirectories.has(directory)
+    }),
+    ...failures.map(failure => ({
+      version: failure.version || basename(dirname(failure.directory)),
+      platform: failure.platform || basename(failure.directory),
+      directory: failure.directory,
+      reason: failure.reason,
+      failedAt,
+    })),
+  ]
+  const next: ActiveVersionManifest = {
+    ...active,
+    runtimeActivationError: selected
+      ? `${detail} Using fallback Runtime "${selected.directory}".`
+      : `${detail} No usable installed Runtime was found.`,
+    runtimeValidationFailures,
+    updatedAt: failedAt,
+  }
+  if (selected) {
+    next.hermesRuntimeVersion = selected.manifestHermesRuntimeVersion || selected.version
+    next.runtimeDirectory = selected.directory
+    next.platform = selected.platform
+  } else {
+    delete next.hermesRuntimeVersion
+    delete next.runtimeDirectory
+  }
+  mkdirSync(dirname(activeVersionPath()), { recursive: true })
+  writeFileSync(activeVersionPath(), JSON.stringify(next, null, 2) + '\n', 'utf8')
+}
+
 function normalizeStringList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -234,9 +288,23 @@ function requiredRuntimeFileGroups(root: string): string[][] {
   const nodeBin = process.platform === 'win32'
     ? join(root, 'node', 'node.exe')
     : join(root, 'node', 'bin', 'node')
-  const groups = [[pythonBin], hermesBins, [nodeBin], [join(root, 'runtime-manifest.json')]]
+  const groups = [
+    [pythonBin],
+    hermesBins,
+    [nodeBin],
+    [join(root, 'runtime-manifest.json')],
+  ]
   if (process.platform === 'win32') groups.push([join(root, 'git', 'cmd', 'git.exe')])
   return groups
+}
+
+function validateRuntimeAgentFiles(root: string): void {
+  const missing = ['run_agent.py', 'cli.py']
+    .map(name => join(root, 'python', name))
+    .filter(file => !existsSync(file))
+  if (missing.length > 0) {
+    throw new Error(`Runtime Agent files are missing: ${missing.map(file => relative(root, file)).join(', ')}`)
+  }
 }
 
 function missingRuntimeFiles(root: string): string[] {
@@ -317,24 +385,39 @@ function scanInstalledRuntimeVersions(active = readActiveVersionManifest()): Ins
   return installed
 }
 
-export function listInstalledRuntimeVersions(active = readActiveVersionManifest()): InstalledRuntimeVersion[] {
+function sortRuntimeVersions(installed: InstalledRuntimeVersion[]): InstalledRuntimeVersion[] {
   const currentPlatform = runtimePlatformKey()
-  const installed = scanInstalledRuntimeVersions(active)
-    .filter(item => {
-      try {
-        validateRuntimeDirectory(item.directory, item.platform)
-        return true
-      } catch {
-        return false
-      }
-    })
-
   return installed.sort((left, right) => {
     if (left.active !== right.active) return left.active ? -1 : 1
     if (left.platform === currentPlatform && right.platform !== currentPlatform) return -1
     if (right.platform === currentPlatform && left.platform !== currentPlatform) return 1
     return right.version.localeCompare(left.version, undefined, { numeric: true })
   })
+}
+
+export function listRuntimeVersionCandidates(active = readActiveVersionManifest()): InstalledRuntimeVersion[] {
+  const validationFailures = new Map(
+    (active?.runtimeValidationFailures || []).map(failure => [resolve(failure.directory), failure.reason]),
+  )
+  const candidates = scanInstalledRuntimeVersions(active)
+    .map(item => {
+      const recordedFailure = validationFailures.get(resolve(item.directory))
+      if (recordedFailure) return { ...item, validationError: recordedFailure }
+      try {
+        validateRuntimeDirectory(item.directory, item.platform)
+        return item
+      } catch (error) {
+        return {
+          ...item,
+          validationError: error instanceof Error ? error.message : String(error),
+        }
+      }
+    })
+  return sortRuntimeVersions(candidates)
+}
+
+export function listInstalledRuntimeVersions(active = readActiveVersionManifest()): InstalledRuntimeVersion[] {
+  return listRuntimeVersionCandidates(active).filter(item => !item.validationError)
 }
 
 export function listInstalledWebUiVersions(active = readActiveVersionManifest()): InstalledWebUiVersion[] {
@@ -426,6 +509,11 @@ export async function getRuntimeVersionStatus(
     discoverHermesCliInstallations(installedRuntimes),
   ])
   const webUiVersion = getHermesWebUiVersion()
+  const selectedInstallation = cliInstallations.find(item => item.selected)
+  const lockedSource = process.env.HERMES_RUNTIME_SOURCE?.trim()
+  const source = lockedSource === 'user-cli' || lockedSource === 'managed-runtime' || lockedSource === 'none'
+    ? lockedSource
+    : selectedInstallation?.source || 'none'
 
   const status: RuntimeVersionStatus = {
     active,
@@ -439,6 +527,12 @@ export async function getRuntimeVersionStatus(
       activeVersion: probeRuntime ? active?.hermesRuntimeVersion || '' : '',
       agentVersion,
       activeDirectory: probeRuntime ? active?.runtimeDirectory || '' : '',
+      pythonPath: process.env.HERMES_AGENT_CLI_PYTHON?.trim()
+        || process.env.HERMES_AGENT_BRIDGE_PYTHON?.trim()
+        || '',
+      agentRoot: process.env.HERMES_AGENT_ROOT?.trim() || '',
+      source,
+      dataDirectory: detectHermesHome(),
       storageDirectory: probeRuntime ? runtimeStorageRoot(active) : '',
       defaultStorageDirectory: probeRuntime ? defaultDesktopRuntimeRoot() : '',
       pendingStorageDirectory: probeRuntime ? active?.pendingRuntimeRootDirectory || '' : '',
@@ -464,7 +558,8 @@ function recordHermesAgentStatus(status: RuntimeVersionStatus): void {
   const selected = status.hermes.cliInstallations.find(item => item.selected)
     || status.hermes.cliInstallations[0]
   const activeRuntime = status.hermes.installed.find(item => item.active)
-  const installed = Boolean(status.hermes.agentVersion || selected?.path || activeRuntime)
+  const installed = status.hermes.source !== 'none'
+    && Boolean(status.hermes.agentVersion || selected?.path || activeRuntime)
   updateAgentStatus('hermes', {
     name: 'Hermes',
     provider: 'Nous Research',
@@ -477,7 +572,7 @@ function recordHermesAgentStatus(status: RuntimeVersionStatus): void {
       || '',
     source: installed ? selected?.source || (activeRuntime ? 'managed-runtime' : 'user-cli') : 'not-installed',
     path: selected?.path || '',
-    error: '',
+    error: status.hermes.source === 'none' ? status.hermes.activationError : '',
     installations: status.hermes.cliInstallations,
   })
 }
@@ -584,6 +679,7 @@ export async function downloadRuntimeVersion(version: string, source: VersionDow
     onProgress?.({ stage: 'extract', message: 'runtimeVersions.jobStage.extractRuntime' })
     await extractTarGzip(archive, tempRoot)
     validateRuntimeDirectory(tempRoot, platform)
+    validateRuntimeAgentFiles(tempRoot)
     onProgress?.({ stage: 'install', message: 'runtimeVersions.jobStage.installRuntime' })
     removeRuntimePath(targetRoot)
     mkdirSync(dirname(targetRoot), { recursive: true })
@@ -657,6 +753,7 @@ export function activateInstalledRuntimeVersion(version: string): ActiveVersionM
   if (!target) throw new Error(`Installed runtime version not found for this platform: ${cleanVersion}`)
   try {
     validateRuntimeDirectory(target.directory, target.platform)
+    validateRuntimeAgentFiles(target.directory)
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     throw new Error(`Runtime ${cleanVersion} cannot be activated: ${detail}`)
@@ -672,6 +769,8 @@ export function activateInstalledRuntimeVersion(version: string): ActiveVersionM
     pendingRuntimeRootDirectory: active?.pendingRuntimeRootDirectory || '',
     runtimeMigrationError: active?.runtimeMigrationError || '',
     runtimeActivationError: '',
+    runtimeValidationFailures: (active?.runtimeValidationFailures || [])
+      .filter(failure => resolve(failure.directory) !== resolve(target.directory)),
     platform: target.platform,
     updatedAt: new Date().toISOString(),
   }
@@ -759,6 +858,7 @@ export function activateDownloadedWebUiVersion(version: string): ActiveVersionMa
     pendingRuntimeRootDirectory: active?.pendingRuntimeRootDirectory || '',
     runtimeMigrationError: active?.runtimeMigrationError || '',
     runtimeActivationError: active?.runtimeActivationError || '',
+    runtimeValidationFailures: active?.runtimeValidationFailures || [],
     platform: active?.platform || runtimePlatformKey(),
     updatedAt: new Date().toISOString(),
   }
@@ -854,9 +954,6 @@ function createDownloadJob(
         job.percent = 100
         job.result = result
         job.updatedAt = new Date().toISOString()
-        if (kind === 'runtime' && runtimeInstallCompletedHandler) {
-          void Promise.resolve(runtimeInstallCompletedHandler(result as InstalledRuntimeVersion)).catch(() => undefined)
-        }
       })
       .catch(err => {
         job.status = 'failed'
