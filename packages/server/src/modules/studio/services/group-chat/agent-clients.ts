@@ -35,7 +35,8 @@ export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
 export interface AgentConfig {
     agentId?: string
-    agent?: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi'
+    agent?: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi' | 'grok' | 'opencode'
+    agentMode?: 'scoped' | 'global'
     profile: string
     provider?: string
     model?: string
@@ -101,7 +102,8 @@ export function mentionMessageToStoredContextMessage(roomId: string, msg: Mentio
 type GroupEstimateMessage = { role: 'user' | 'assistant'; content: string }
 export type GroupModelContext = { model: string; provider: string }
 export type GroupAgentSessionConfig = {
-    agent?: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi'
+    agent?: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi' | 'grok' | 'opencode'
+    agentMode?: 'scoped' | 'global'
     provider?: string
     model?: string
     apiMode?: string
@@ -228,7 +230,8 @@ export interface GroupAgentEventSink {
 
 export interface GroupAgentExecutor {
     readonly agentId: string
-    readonly agent: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi'
+    readonly agent: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi' | 'grok' | 'opencode'
+    readonly agentMode: 'scoped' | 'global'
     readonly profile: string
     readonly provider: string
     readonly model: string
@@ -285,8 +288,8 @@ export interface GroupChatRunService {
             workspace?: string | null
             source?: string
             session_source?: 'group_chat'
-            coding_agent_id?: 'claude-code' | 'codex' | 'pi' | 'ekko-agent'
-            mode?: 'scoped'
+            coding_agent_id?: 'claude-code' | 'codex' | 'pi' | 'grok' | 'opencode' | 'ekko-agent'
+            mode?: 'scoped' | 'global'
             profile?: string
             reasoning_effort?: string
             background_delegation_enabled?: boolean
@@ -326,7 +329,8 @@ export interface GroupChatRunService {
 
 export class AgentClient implements GroupAgentExecutor {
     readonly agentId: string
-    readonly agent: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi'
+    readonly agent: 'hermes' | 'ekko' | 'codex' | 'claude' | 'pi' | 'grok' | 'opencode'
+    readonly agentMode: 'scoped' | 'global'
     readonly profile: string
     readonly provider: string
     readonly model: string
@@ -360,6 +364,9 @@ export class AgentClient implements GroupAgentExecutor {
     constructor(config: AgentConfig, handlers: AgentEventHandler = {}, eventSink: GroupAgentEventSink | null = null) {
         this.agentId = config.agentId || Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
         this.agent = config.agent || 'hermes'
+        this.agentMode = config.agentMode === 'global' && (this.agent === 'claude' || this.agent === 'codex' || this.agent === 'pi' || this.agent === 'grok' || this.agent === 'opencode')
+            ? 'global'
+            : 'scoped'
         this.profile = config.profile
         this.provider = String(config.provider || '').trim()
         this.model = String(config.model || '').trim()
@@ -405,6 +412,9 @@ export class AgentClient implements GroupAgentExecutor {
         const token = await getToken()
 
         this.socket = io(`http://127.0.0.1:${actualPort}/group-chat`, {
+            // A relay namespace can close its entire transport. Do not let it
+            // share this Agent's connection and permanently disconnect it.
+            forceNew: true,
             auth: {
                 token: token || undefined,
                 userId: this.agentId,
@@ -1173,14 +1183,21 @@ export class AgentClient implements GroupAgentExecutor {
                     ? 'claude-code'
                     : this.agent === 'pi'
                         ? 'pi'
-                        : 'codex'
+                        : this.agent === 'grok'
+                            ? 'grok'
+                            : this.agent === 'opencode'
+                                ? 'opencode'
+                                : 'codex'
+            const usesGlobalCodingAgent = this.agentMode === 'global' && codingAgentId !== 'ekko-agent'
             const groupSystemPrompt = this.groupSystemPrompt(roomId, msg)
             const result = await this.chatRunService.runAndWait({
                 input: this.groupRuntimeInput(msg, runtimeContext),
                 session_id: sessionId,
-                model: this.model || undefined,
-                provider: this.provider || undefined,
-                ...(this.apiMode ? { apiMode: this.apiMode } : {}),
+                ...(usesGlobalCodingAgent ? {} : {
+                    model: this.model || undefined,
+                    provider: this.provider || undefined,
+                }),
+                ...(!usesGlobalCodingAgent && this.apiMode ? { apiMode: this.apiMode } : {}),
                 instructions: groupSystemPrompt,
                 group_system_prompt: groupSystemPrompt,
                 group_room_id: roomId,
@@ -1189,9 +1206,11 @@ export class AgentClient implements GroupAgentExecutor {
                 source: 'group_chat',
                 session_source: 'group_chat',
                 coding_agent_id: codingAgentId,
-                mode: 'scoped',
+                mode: usesGlobalCodingAgent ? 'global' : 'scoped',
                 profile: this.profile,
-                reasoning_effort: this.reasoningEffort || undefined,
+                ...(!usesGlobalCodingAgent && this.reasoningEffort
+                    ? { reasoning_effort: this.reasoningEffort }
+                    : {}),
                 background_delegation_enabled: false,
                 context_compression_enabled: false,
                 ...(codingAgentId === 'ekko-agent'
@@ -1963,8 +1982,14 @@ export class AgentClient implements GroupAgentExecutor {
             this.handlers.onRoomUpdated?.(data)
         })
 
-        // Auto rejoin rooms on reconnect
-        s.io.on('reconnect', async () => {
+        s.on('disconnect', (reason) => {
+            logger.info({ agentId: this.agentId, reason, willReconnect: s.active }, '[AgentClient] group socket disconnected')
+        })
+
+        // Manager reconnect fires before this namespace is connected, when
+        // joinRoom still fails ensureConnected(). Rejoin after socket connect.
+        s.on('connect', async () => {
+            if (s !== this.socket || this.joinedRooms.size === 0) return
             if (this._reconnecting) return
             this._reconnecting = true
             logger.info(`[AgentClients] ${this.name} reconnecting, rejoining ${this.joinedRooms.size} rooms...`)
@@ -1989,12 +2014,14 @@ export function groupBridgeSessionId(
     runtimeConfig: GroupAgentSessionConfig = {},
 ): string {
     const agent = String(runtimeConfig.agent || 'hermes').trim()
+    const agentMode = runtimeConfig.agentMode === 'global' ? 'global' : 'scoped'
     const provider = String(runtimeConfig.provider || '').trim()
     const model = String(runtimeConfig.model || '').trim()
     const apiMode = agent === 'hermes' ? '' : String(runtimeConfig.apiMode || '').trim()
     const reasoningEffort = String(runtimeConfig.reasoningEffort || '').trim()
-    const runtimeKey = agent !== 'hermes' || provider || model || apiMode || reasoningEffort
-        ? `_${agent}_${provider}_${model}_${apiMode}_${reasoningEffort}`
+    const modeKey = agentMode === 'global' ? '_global' : ''
+    const runtimeKey = agent !== 'hermes' || provider || model || apiMode || reasoningEffort || modeKey
+        ? `_${agent}${modeKey}_${provider}_${model}_${apiMode}_${reasoningEffort}`
         : ''
     const rawKey = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}${runtimeKey}`
     const safePrefix = rawKey.replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -2562,6 +2589,7 @@ export class AgentClients {
             ...persisted,
             agentId: String(agent.agentId || ''),
             agent: String(agent.agent || ''),
+            agentMode: String(agent.agentMode || 'scoped'),
             profile: String(agent.profile || ''),
             provider: String(agent.provider || ''),
             model: String(agent.model || ''),

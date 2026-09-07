@@ -6,6 +6,46 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '0.7.18',
+    date: '2026-09-06',
+    changes: [
+      'changelog.new_0_7_18_1',
+      'changelog.new_0_7_18_2',
+      'changelog.new_0_7_18_3',
+      'changelog.new_0_7_18_4',
+      'changelog.new_0_7_18_5',
+      'changelog.new_0_7_18_6',
+      'changelog.new_0_7_18_7',
+      'changelog.new_0_7_18_8',
+      'changelog.new_0_7_18_9',
+      'changelog.new_0_7_18_10',
+    ],
+  },
+  {
+    version: '0.7.17',
+    date: '2026-09-04',
+    changes: [
+      'changelog.new_0_7_17_1',
+      'changelog.new_0_7_17_2',
+      'changelog.new_0_7_17_3',
+      'changelog.new_0_7_17_4',
+      'changelog.new_0_7_17_5',
+      'changelog.new_0_7_17_6',
+      'changelog.new_0_7_17_7',
+    ],
+  },
+  {
+    version: '0.7.16',
+    date: '2026-09-02',
+    changes: [
+      'changelog.new_0_7_16_1',
+      'changelog.new_0_7_16_2',
+      'changelog.new_0_7_16_3',
+      'changelog.new_0_7_16_4',
+      'changelog.new_0_7_16_5',
+    ],
+  },
+  {
     version: '0.7.15',
     date: '2026-09-01',
     changes: [
