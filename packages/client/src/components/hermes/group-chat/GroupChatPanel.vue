@@ -1581,7 +1581,7 @@ onMounted(() => {
     if (!props.standalone) void refreshAgentAvailability()
     if (!props.standalone) {
         try {
-            showGroupChatRefactorNotice.value = window.localStorage.getItem(GROUP_CHAT_REFACTOR_NOTICE_STORAGE_KEY) !== '1'
+            showGroupChatRefactorNotice.value = false
         } catch {
             showGroupChatRefactorNotice.value = true
         }

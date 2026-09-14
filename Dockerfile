@@ -4,18 +4,19 @@ ARG BASE_IMAGE=nousresearch/hermes-agent:latest
 # Stage 1: Build stage
 # ==========================================
 FROM ${BASE_IMAGE} AS builder
-
+ARG NODE_VERSION=24.15.0
 USER root
 
 # 安装构建依赖与系统编译工具
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    git \
+    ffmpeg \
     make \
     g++ \
-    python3 \
-    && rm -rf /var/lib/apt/lists/*
+    unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 WORKDIR /app
 
@@ -48,15 +49,6 @@ FROM ${BASE_IMAGE} AS production
 
 USER root
 
-# 仅安装运行时必要的系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    ffmpeg \
-    git \
-    unzip \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
 
 # 全局安装 Claude Code、Codex CLI 与 Lark CLI 并清理 npm 缓存
 RUN npm install -g --registry=https://registry.npmmirror.com --no-audit --no-fund @anthropic-ai/claude-code @openai/codex \

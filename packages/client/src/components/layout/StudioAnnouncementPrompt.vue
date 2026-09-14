@@ -37,7 +37,7 @@ function restoreSeen() {
 }
 
 function isPageVisible() {
-  return document.visibilityState !== 'hidden'
+  return false
 }
 
 async function checkAnnouncements() {
