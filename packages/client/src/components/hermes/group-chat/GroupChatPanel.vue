@@ -3152,24 +3152,6 @@ function handleClarifyKeydown(event: KeyboardEvent) {
                 </template>
             </NModal>
             <NModal
-                v-model:show="showGroupChatRefactorNotice"
-                preset="dialog"
-                :title="t('groupChat.refactorNoticeTitle')"
-                :mask-closable="false"
-                :close-on-esc="false"
-                :closable="false"
-                style="width: 480px; max-width: 92vw"
-            >
-                <p class="group-chat-refactor-notice">
-                    {{ t('groupChat.refactorNoticeMessage') }}
-                </p>
-                <template #action>
-                    <NButton type="primary" @click="acknowledgeGroupChatRefactorNotice">
-                        {{ t('common.confirm') }}
-                    </NButton>
-                </template>
-            </NModal>
-            <NModal
                 v-model:show="showWorkspaceModal"
                 preset="dialog"
                 :title="t('chat.setWorkspaceTitle')"

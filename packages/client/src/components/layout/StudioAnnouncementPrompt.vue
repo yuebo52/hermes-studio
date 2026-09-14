@@ -85,46 +85,8 @@ function confirm() {
   }
   dismiss()
 }
-
-onMounted(() => {
-  mounted = true
-  void checkAnnouncements()
-  window.addEventListener('focus', checkAnnouncements)
-  document.addEventListener('visibilitychange', checkAnnouncements)
-})
-
-onBeforeUnmount(() => {
-  mounted = false
-  window.removeEventListener('focus', checkAnnouncements)
-  document.removeEventListener('visibilitychange', checkAnnouncements)
-})
 </script>
 
-<template>
-  <NModal v-if="announcement" :show="true" :mask-closable="false" :close-on-esc="false">
-    <NCard
-      data-testid="studio-announcement"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="announcement.title"
-      :title="announcement.title"
-      :bordered="false"
-      style="width: min(520px, calc(100vw - 32px))"
-    >
-      <div class="announcement-content">{{ announcement.content }}</div>
-      <template #footer>
-        <div class="actions">
-          <NButton v-if="actionUrl && announcement.dismissible" @click="dismiss">
-            {{ t('announcements.later') }}
-          </NButton>
-          <NButton type="primary" @click="confirm">
-            {{ t(actionUrl ? 'announcements.details' : 'announcements.gotIt') }}
-          </NButton>
-        </div>
-      </template>
-    </NCard>
-  </NModal>
-</template>
 
 <style scoped lang="scss">
 .announcement-content {
