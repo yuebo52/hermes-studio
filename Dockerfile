@@ -72,13 +72,18 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/bin ./bin
 
-ENV NODE_ENV=production \
-    HOME=/home/agent \
-    HERMES_HOME=/home/agent/.hermes \
-    HERMES_WEB_UI_MANAGED_GATEWAY=1 \
-    PATH=/opt/hermes/.venv/bin:/usr/local/bin:$PATH
+
+ENV NODE_ENV=production
+ENV HOME=/home/agent
+ENV HERMES_HOME=/home/agent/.hermes
+ENV HERMES_WEB_UI_MANAGED_GATEWAY=1
+# Keep runtime-installed coding agent CLIs in the existing Studio data volume.
+ENV NPM_CONFIG_PREFIX=/home/agent/.hermes-web-ui/coding-agent/npm
+ENV PATH=/home/agent/.hermes-web-ui/coding-agent/npm/bin:/opt/hermes/.venv/bin:$PATH
+
 
 EXPOSE 6060
 
-ENTRYPOINT ["node", "dist/server/index.js"]
+# 强制覆盖基础镜像的默认启动脚本，让镜像本身具备独立运行的能力
+ENTRYPOINT ["/app/bin/start-studio-all.sh"]
 CMD []
