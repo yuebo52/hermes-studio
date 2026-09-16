@@ -95,7 +95,7 @@ function openWorkflow() {
         </svg>
         <span>{{ t('sidebar.search') }}</span>
       </button>
-      <button
+      <button style="display: none;"
         class="page-sidebar-tab"
         :class="{ active: active === 'connections' }"
         type="button"
